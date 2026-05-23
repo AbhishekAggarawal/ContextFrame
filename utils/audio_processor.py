@@ -62,7 +62,23 @@ def download_youtube_audio(url: str) -> str:
         ],
         "quiet": True,
         "no_warnings": True,
-        "extractor_args": {"youtube": {"js_runtimes": ["none"]}},
+        # ── Work around YouTube's datacenter-IP anti-bot checks ──────────
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/131.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web"],
+                "player_skip": ["webpage", "configs"],
+                "js_runtimes": ["none"],
+            }
+        },
+        "extractor_retries": 3,
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
