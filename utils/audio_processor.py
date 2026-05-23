@@ -74,8 +74,8 @@ def download_youtube_audio(url: str) -> str:
         },
         "extractor_args": {
             "youtube": {
-                "player_client": ["web_embedded", "android"],
-                "player_skip": ["webpage", "configs"],
+                "player_client": ["ios", "web_embedded"],
+                "player_skip": ["webpage", "configs", "js"],
                 "js_runtimes": ["none"],
             }
         },
