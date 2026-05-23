@@ -1,6 +1,11 @@
 # ── AI Meeting Assistant ── requirements.txt ──────────────────────────────────
 # Python >= 3.10 recommended
 
+# ── Web Server (FastAPI) ──────────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn>=0.30.0
+pydantic>=2.7.0
+
 # ── Audio / Video acquisition ─────────────────────────────────────────────────
 yt-dlp>=2024.4.9                  # Download audio from YouTube URLs
 pydub>=0.25.1                     # Audio file manipulation / format conversion
