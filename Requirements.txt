@@ -12,6 +12,7 @@
 fastapi>=0.111.0
 uvicorn>=0.30.0
 pydantic>=2.7.0
+python-multipart>=0.0.9            # Required by FastAPI for Form data / file uploads
 
 # ── Audio / Video acquisition ─────────────────────────────────────────────────
 yt-dlp>=2024.4.9                  # Download audio from YouTube URLs
