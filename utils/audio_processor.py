@@ -43,100 +43,83 @@ def _ensure_pydub():
 
 def download_youtube_audio(url: str) -> str:
     import yt_dlp
-    import re
 
     safe_id = uuid.uuid4().hex[:8]
     output_template = os.path.join(DOWNLOAD_DIR, f"{safe_id}_%(title).100s.%(ext)s")
-    output_template = output_template.encode('ascii', errors='replace').decode('ascii')
+    output_template = output_template.encode("ascii", errors="replace").decode("ascii")
 
-    _BASE_OPTS = {
-        "format": "bestaudio/best",
-        "outtmpl": output_template,
-        "ffmpeg_location": FFMPEG_PATH,
-        "postprocessors": [
-            {"key": "FFmpegExtractAudio", "preferredcodec": "wav", "preferredquality": "192"}
-        ],
-        "quiet": True,
-        "no_warnings": True,
-        "http_headers": {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            ),
-            "Accept-Language": "en-US,en;q=0.9",
+    # ── Client strategies ordered from most to least likely to bypass anti-bot ──
+    # "tv" = YouTube on Smart TV — uses the /youtubei/v1/player endpoint
+    #   with a TV client context; typically much lighter anti-bot filtering
+    # "android_vr" = YouTube VR app — separate API path, less guarded
+    # "web_embedded" = embedded player (no iframe check on this endpoint)
+    _CLIENT_STRATEGIES = [
+        # Strategy 1: TV client (smart TV — most lenient anti-bot)
+        {
+            "player_client": ["tv", "tv_embed"],
+            "player_skip": ["webpage", "configs", "js"],
+            "js_runtimes": ["none"],
         },
-        "extractor_retries": 2,
-    }
-
-    # ── Strategy 1: Direct YouTube ────────────────────────────────────────
-    _direct_opts = {
-        **_BASE_OPTS,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["ios", "web_embedded"],
-                "player_skip": ["webpage", "configs", "js"],
-                "js_runtimes": ["none"],
-            }
+        # Strategy 2: Android VR + TV + Embedded
+        {
+            "player_client": ["android_vr", "tv", "web_embedded"],
+            "player_skip": ["webpage", "configs", "js"],
+            "js_runtimes": ["none"],
         },
-    }
+        # Strategy 3: iOS + Android (mobile apps)
+        {
+            "player_client": ["ios", "android", "web_embedded"],
+            "player_skip": ["webpage", "configs", "js"],
+            "js_runtimes": ["none"],
+        },
+    ]
 
-    _bot_markers = [r"sign in to confirm", r"not a bot", r"automated query"]
-
-    try:
-        with yt_dlp.YoutubeDL(_direct_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info).replace(".webm", ".wav").replace(".m4a", ".wav")
-        print("Downloaded directly from YouTube.")
-        return filename
-    except Exception as _err:
-        _err_str = str(_err).lower()
-        if not any(re.search(m, _err_str) for m in _bot_markers):
-            raise   # genuine error, not anti-bot
-        print("YouTube anti-bot block detected → switching to Invidious proxy …")
-
-    # ── Strategy 2: Invidious proxy fallback ──────────────────────────────
-    # Public Invidious instances — free, no auth, worldwide IPs
-    _INVIDIOUS = os.getenv(
-        "INVIDIOUS_INSTANCES",
-        "yewtu.be,inv.nadeko.net,inv.tux.pizza,inv.zzls.xyz,vid.puffyan.us",
-    ).split(",")
-
-    # Parse YouTube video ID
-    _vid = re.search(
-        r"(?:v=|/watch\?v=|youtu\.be/|/embed/|/v/|/e/|watch\?v=)([0-9A-Za-z_-]{11})",
-        url,
+    _UA = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/131.0.0.0 Safari/537.36"
     )
-    if not _vid:
-        raise RuntimeError(f"Could not extract video ID from URL: {url}")
-    _vid = _vid.group(1)
-
-    _invidious_opts = {
-        **_BASE_OPTS,
-        # Don't add extractor_args — Invidious extractor doesn't need anti-bot tricks
-    }
 
     _last_err = None
-    for _instance in _INVIDIOUS:
-        _instance = _instance.strip()
-        if not _instance:
-            continue
-        _proxy_url = f"https://{_instance}/watch?v={_vid}"
-        print(f"  → Trying Invidious: {_instance} …")
+    for _idx, _extractor_args in enumerate(_CLIENT_STRATEGIES):
+        _strategy_name = f"yt-dlp #{_idx + 1}"
+        print(f"  → {_strategy_name}: clients={_extractor_args['player_client']} …")
         try:
-            with yt_dlp.YoutubeDL(_invidious_opts) as ydl:
-                info = ydl.extract_info(_proxy_url, download=True)
+            ydl_opts = {
+                "format": "bestaudio/best",
+                "outtmpl": output_template,
+                "ffmpeg_location": FFMPEG_PATH,
+                "postprocessors": [
+                    {"key": "FFmpegExtractAudio", "preferredcodec": "wav", "preferredquality": "192"}
+                ],
+                "quiet": True,
+                "no_warnings": True,
+                "http_headers": {
+                    "User-Agent": _UA,
+                    "Accept-Language": "en-US,en;q=0.9",
+                },
+                "extractor_args": {"youtube": _extractor_args},
+                "extractor_retries": 1,
+                "geo_bypass": True,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
                 filename = ydl.prepare_filename(info).replace(".webm", ".wav").replace(".m4a", ".wav")
-            print(f"Downloaded via Invidious ({_instance}).")
+            print(f"  ✓ Downloaded via {_strategy_name}")
             return filename
-        except Exception as _e2:
-            _last_err = _e2
-            print(f"  ✗ {_instance} failed — {str(_e2)[:100]}")
-            continue
+        except Exception as _e:
+            _last_err = _e
+            _err_str = str(_e)
+            if "Sign in to confirm" in _err_str or "not a bot" in _err_str.lower():
+                print(f"  ✗ {_strategy_name} blocked by anti-bot, trying next …")
+                continue
+            else:
+                print(f"  ✗ {_strategy_name} failed: {_err_str[:100]}")
+                # Non-bot error — keep trying next strategy
+                continue
 
     raise RuntimeError(
-        f"All download methods exhausted. Direct YouTube blocked (anti-bot), "
-        f"and all Invidious proxies failed. Last error: {_last_err}"
+        f"All download strategies exhausted. Last error: {_last_err}"
     )
 
 
