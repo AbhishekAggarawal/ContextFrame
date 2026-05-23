@@ -1,5 +1,5 @@
 # ── AI Meeting Assistant ── requirements.txt ──────────────────────────────────
-# Python >= 3.10 recommended
+# Python 3.12 required (pydub needs audioop which was removed in 3.13+)
 
 # ── Web Server (FastAPI) ──────────────────────────────────────────────────────
 fastapi>=0.111.0
