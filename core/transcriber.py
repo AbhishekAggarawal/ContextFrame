@@ -6,21 +6,21 @@ import requests
 # ── Ensure ffmpeg is on PATH *before* whisper import ────────────────────────
 # whisper uses subprocess.run("ffmpeg" ...) internally and ignores
 # pydub's AudioSegment.converter setting.
-_FFMPEG_DIRS = [
-    r"C:\Users\Abhishek\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.1-full_build\bin",
-    r"C:\ffmpeg\bin",
-]
-for _d in _FFMPEG_DIRS:
-    if os.path.isdir(_d) and _d not in os.environ["PATH"].split(os.pathsep):
-        os.environ["PATH"] = _d + os.pathsep + os.environ["PATH"]
-        break
-
-# Also try shutil.which as fallback for ffmpeg not in static paths
+# Cross-platform: uses shutil.which which works on Linux (Render) and Windows
 _ffmpeg_exe = shutil.which("ffmpeg")
 if _ffmpeg_exe:
     _ffmpeg_dir = os.path.dirname(_ffmpeg_exe)
     if _ffmpeg_dir not in os.environ["PATH"].split(os.pathsep):
         os.environ["PATH"] = _ffmpeg_dir + os.pathsep + os.environ["PATH"]
+# Windows-specific fallbacks (only on win32)
+if sys.platform == "win32":
+    _FFMPEG_DIRS = [
+        r"C:\ffmpeg\bin",
+    ]
+    for _d in _FFMPEG_DIRS:
+        if os.path.isdir(_d) and _d not in os.environ["PATH"].split(os.pathsep):
+            os.environ["PATH"] = _d + os.pathsep + os.environ["PATH"]
+            break
 
 import whisper
 from pydub import AudioSegment

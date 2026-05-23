@@ -7,12 +7,11 @@ import shutil
 DOWNLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'downloades')
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-# Locate ffmpeg binary (installed via winget)
-_FFMPEG_CANDIDATES = [
-    shutil.which("ffmpeg"),
-    r"C:\Users\Abhishek\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.1-full_build\bin\ffmpeg.exe",
-    r"C:\ffmpeg\bin\ffmpeg.exe",
-]
+# Locate ffmpeg binary (cross-platform)
+_FFMPEG_CANDIDATES = [shutil.which("ffmpeg")]
+# Windows-specific fallbacks
+if sys.platform == "win32":
+    _FFMPEG_CANDIDATES.append(r"C:\ffmpeg\bin\ffmpeg.exe")
 FFMPEG_PATH = next((p for p in _FFMPEG_CANDIDATES if p and os.path.exists(p)), None)
 
 if FFMPEG_PATH is None:
