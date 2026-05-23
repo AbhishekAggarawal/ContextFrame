@@ -23,12 +23,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import uvicorn
 
-from utils.audio_processor import process_input
-from core.transcriber import transcribe_all
-from core.summarizer import summarize, generate_title
-from core.extractor import extract_action_items, extract_key_decisions, extract_questions
-from core.rag_engine import build_rag_chain, ask_question
-
 app = FastAPI(title="AI Video Assistant API", version="1.0.0")
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
@@ -75,6 +69,15 @@ def _sanitize_output(text: str) -> str:
 
 def _run_pipeline(job: JobStatus, source: str, language: str):
     """Run the full pipeline in a background thread."""
+    # ── Lazy imports: heavy ML libs (langchain, sentence-transformers, chromadb,
+    #     torch/whisper) are only loaded inside the background thread so the server
+    #     can start and bind the port immediately. ───────────────────────────────
+    from utils.audio_processor import process_input
+    from core.transcriber import transcribe_all
+    from core.summarizer import summarize, generate_title
+    from core.extractor import extract_action_items, extract_key_decisions, extract_questions
+    from core.rag_engine import build_rag_chain
+
     try:
         job.status = "processing"
         job.progress = 5
@@ -217,6 +220,8 @@ async def get_job_results(job_id: str):
 @app.post("/api/jobs/{job_id}/chat")
 async def chat_with_video(job_id: str, req: ChatRequest):
     """Ask a question about the processed video using RAG."""
+    from core.rag_engine import ask_question
+
     job = jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
