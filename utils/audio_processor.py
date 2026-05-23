@@ -62,7 +62,8 @@ def download_youtube_audio(url: str) -> str:
         ],
         "quiet": True,
         "no_warnings": True,
-        # ── Work around YouTube's datacenter-IP anti-bot checks ──────────
+        # ── Avoid YouTube anti-bot blocks on datacenter IPs ──────────
+        # "web_embedded" uses the embedded player API (no auth needed)
         "http_headers": {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -73,7 +74,7 @@ def download_youtube_audio(url: str) -> str:
         },
         "extractor_args": {
             "youtube": {
-                "player_client": ["android", "web"],
+                "player_client": ["web_embedded", "android"],
                 "player_skip": ["webpage", "configs"],
                 "js_runtimes": ["none"],
             }
