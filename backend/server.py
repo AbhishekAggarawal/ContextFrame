@@ -84,13 +84,18 @@ def _run_pipeline(job: JobStatus, source: str, language: str):
         job.progress = 5
         job.message = "Downloading / converting audio..."
 
-        chunks = process_input(source)
+        chunks, transcript = process_input(source, language)
 
-        job.status = "transcribing"
-        job.progress = 20
-        job.message = f"Transcribing {len(chunks)} audio chunk(s)..."
-
-        transcript = transcribe_all(chunks, language)
+        if transcript is None:
+            # No transcript from YouTube captions — transcribe audio chunks via Sarvam STT
+            job.status = "transcribing"
+            job.progress = 20
+            job.message = f"Transcribing {len(chunks)} audio chunk(s)..."
+            transcript = transcribe_all(chunks, language)
+        else:
+            # Transcript was fetched directly from YouTube captions — skip STT
+            job.progress = 40
+            job.message = "Using YouTube captions — skipping transcription..."
 
         job.progress = 45
         job.message = "Generating title..."

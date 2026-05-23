@@ -11,9 +11,16 @@ load_dotenv()
 def run_pipeline(source :str, language :str = "english") -> dict:
     print("Starting AI Video Assistant (Sarvam STT + BM25 RAG)")
 
-    chunks = process_input(source)
-    transcript = transcribe_all(chunks, language)
-    print(f"Raw transcription (first 300 chars): {transcript[:300]}")
+    chunks, transcript = process_input(source, language)
+
+    if transcript is None:
+        # No transcript from YouTube captions -- transcribe audio chunks via Sarvam STT
+        print(f"Transcribing {len(chunks)} audio chunk(s) via Sarvam STT...")
+        transcript = transcribe_all(chunks, language)
+        print(f"Raw transcription (first 300 chars): {transcript[:300]}")
+    else:
+        # Transcript was fetched directly from YouTube captions -- skip STT
+        print(f"Using YouTube captions ({len(transcript.split())} words) -- skipping STT...")
 
     title = generate_title(transcript)
     summary = summarize(transcript)

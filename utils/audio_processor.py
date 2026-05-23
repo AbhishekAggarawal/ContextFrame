@@ -41,87 +41,177 @@ def _ensure_pydub():
     _AudioSegment.ffprobe = _ffprobe_path
     _pydub_ready = True
 
+
+def _extract_video_id(url: str) -> str:
+    """Extract 11-char YouTube video ID from any URL format."""
+    import re
+    _vid = re.search(
+        r"(?:v=|/watch\?v=|youtu\.be/|/embed/|/v/|/e/|watch\?v=)([0-9A-Za-z_-]{11})",
+        url,
+    )
+    if not _vid:
+        raise RuntimeError(f"Could not extract video ID from URL: {url}")
+    return _vid.group(1)
+
+
+def fetch_youtube_transcript(url: str, language: str = "english") -> str:
+    """
+    Fetch auto-generated captions from YouTube using youtube-transcript-api.
+    This library handles the timedtext API authentication/anti-bot correctly.
+    Returns the transcript text, or raises an exception if not available.
+    """
+    from youtube_transcript_api import YouTubeTranscriptApi
+
+    _vid = _extract_video_id(url)
+
+    _lang_map = {
+        "english": "en",
+        "hinglish": "hi",
+        "hindi": "hi",
+        "spanish": "es",
+        "french": "fr",
+        "german": "de",
+        "japanese": "ja",
+        "korean": "ko",
+        "portuguese": "pt",
+        "russian": "ru",
+        "chinese": "zh",
+        "arabic": "ar",
+    }
+    _lang_code = _lang_map.get(language.lower(), "en")
+
+    print(f"  → Checking YouTube captions ({_lang_code}) for {_vid} ...")
+
+    try:
+        _api = YouTubeTranscriptApi()
+        _fetched = _api.fetch(_vid, languages=(_lang_code,))
+        _transcript = " ".join(s.text for s in _fetched)
+        _transcript = _transcript.strip()
+
+        if not _transcript:
+            print("  ✗ Empty transcript returned")
+            raise RuntimeError("Empty transcript")
+
+        _words = len(_transcript.split())
+        print(f"  ✓ Transcript fetched: {_words} words, {len(_transcript)} chars")
+        return _transcript
+
+    except Exception as _e:
+        print(f"  ✗ Transcript fetch failed: {str(_e)[:100]}")
+        raise
+
+
 def download_youtube_audio(url: str) -> str:
-    import yt_dlp
+    """
+    Download YouTube audio via the Invidious API (fetches direct CDN URL).
+    Completely bypasses anti-bot — Invidious servers have normal IPs.
+    """
+    import requests
+    import re
 
-    safe_id = uuid.uuid4().hex[:8]
-    output_template = os.path.join(DOWNLOAD_DIR, f"{safe_id}_%(title).100s.%(ext)s")
-    output_template = output_template.encode("ascii", errors="replace").decode("ascii")
-
-    # ── Client strategies ordered from most to least likely to bypass anti-bot ──
-    # "tv" = YouTube on Smart TV — uses the /youtubei/v1/player endpoint
-    #   with a TV client context; typically much lighter anti-bot filtering
-    # "android_vr" = YouTube VR app — separate API path, less guarded
-    # "web_embedded" = embedded player (no iframe check on this endpoint)
-    _CLIENT_STRATEGIES = [
-        # Strategy 1: TV client (smart TV — most lenient anti-bot)
-        {
-            "player_client": ["tv", "tv_embed"],
-            "player_skip": ["webpage", "configs", "js"],
-            "js_runtimes": ["none"],
-        },
-        # Strategy 2: Android VR + TV + Embedded
-        {
-            "player_client": ["android_vr", "tv", "web_embedded"],
-            "player_skip": ["webpage", "configs", "js"],
-            "js_runtimes": ["none"],
-        },
-        # Strategy 3: iOS + Android (mobile apps)
-        {
-            "player_client": ["ios", "android", "web_embedded"],
-            "player_skip": ["webpage", "configs", "js"],
-            "js_runtimes": ["none"],
-        },
-    ]
+    _safe_id = uuid.uuid4().hex[:8]
+    _vid = _extract_video_id(url)
 
     _UA = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/131.0.0.0 Safari/537.36"
     )
+    _HEADERS = {"User-Agent": _UA, "Accept-Language": "en-US,en;q=0.9"}
+
+    # Public Invidious instances that are currently known to work
+    _INVIDIOUS = os.getenv(
+        "INVIDIOUS_INSTANCES",
+        "inv.nadeko.net,inv.tux.pizza,inv.zzls.xyz,vid.puffyan.us,inv.us.projectsegfau.lt,iv.ggtyler.dev,inv.vern.cc",
+    ).split(",")
 
     _last_err = None
-    for _idx, _extractor_args in enumerate(_CLIENT_STRATEGIES):
-        _strategy_name = f"yt-dlp #{_idx + 1}"
-        print(f"  → {_strategy_name}: clients={_extractor_args['player_client']} …")
+    for _instance in _INVIDIOUS:
+        _instance = _instance.strip()
+        if not _instance:
+            continue
+
+        _api_url = f"https://{_instance}/api/v1/videos/{_vid}?fields=title,adaptiveFormats"
+        print(f"  → Invidious API: {_instance} …")
+
         try:
-            ydl_opts = {
-                "format": "bestaudio/best",
-                "outtmpl": output_template,
-                "ffmpeg_location": FFMPEG_PATH,
-                "postprocessors": [
-                    {"key": "FFmpegExtractAudio", "preferredcodec": "wav", "preferredquality": "192"}
-                ],
-                "quiet": True,
-                "no_warnings": True,
-                "http_headers": {
-                    "User-Agent": _UA,
-                    "Accept-Language": "en-US,en;q=0.9",
-                },
-                "extractor_args": {"youtube": _extractor_args},
-                "extractor_retries": 1,
-                "geo_bypass": True,
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                filename = ydl.prepare_filename(info).replace(".webm", ".wav").replace(".m4a", ".wav")
-            print(f"  ✓ Downloaded via {_strategy_name}")
-            return filename
+            _r = requests.get(_api_url, headers=_HEADERS, timeout=25)
+            if _r.status_code == 403:
+                print(f"  ✗ {_instance} — 403 (geo-blocked)")
+                continue
+            _r.raise_for_status()
         except Exception as _e:
             _last_err = _e
-            _err_str = str(_e)
-            if "Sign in to confirm" in _err_str or "not a bot" in _err_str.lower():
-                print(f"  ✗ {_strategy_name} blocked by anti-bot, trying next …")
-                continue
-            else:
-                print(f"  ✗ {_strategy_name} failed: {_err_str[:100]}")
-                # Non-bot error — keep trying next strategy
-                continue
+            print(f"  ✗ {_instance} — {str(_e)[:60]}")
+            continue
+
+        try:
+            _meta = _r.json()
+        except Exception:
+            print(f"  ✗ {_instance} — invalid JSON response")
+            continue
+
+        if not _meta or not isinstance(_meta, dict):
+            print(f"  ✗ {_instance} — empty response")
+            continue
+
+        _title = _meta.get("title", _vid)
+        _title = re.sub(r'[\\/*?:"<>|]', "", _title)
+        _title = _title.encode("ascii", errors="replace").decode("ascii")
+
+        # Find best audio stream
+        _best_audio = None
+        _best_bitrate = 0
+        for _fmt in _meta.get("adaptiveFormats", []):
+            _fmt_type = _fmt.get("type", "")
+            if _fmt_type.startswith("audio") and _fmt.get("url"):
+                _br = int(_fmt.get("bitrate", "0") or "0")
+                if _br > _best_bitrate:
+                    _best_bitrate = _br
+                    _best_audio = _fmt
+
+        if not _best_audio:
+            print(f"  ✗ {_instance} — no audio stream")
+            continue
+
+        _ext = _best_audio.get("container") or "m4a"
+        if _ext not in ("m4a", "webm", "opus", "mp4", "aac"):
+            _ext = "m4a"
+
+        _raw_path = os.path.join(DOWNLOAD_DIR, f"{_safe_id}_{_title}_raw.{_ext}")
+        _raw_path = _raw_path.encode("ascii", errors="replace").decode("ascii")
+
+        print(f"  → Downloading {_best_bitrate // 1000}kbps {_ext} …")
+        try:
+            _dl = requests.get(_best_audio["url"], headers=_HEADERS, timeout=300, stream=True)
+            _dl.raise_for_status()
+            _downloaded = 0
+            with open(_raw_path, "wb") as _f:
+                for _chunk in _dl.iter_content(chunk_size=32768):
+                    _f.write(_chunk)
+                    _downloaded += len(_chunk)
+            _size_mb = _downloaded / (1024 * 1024)
+            print(f"  ✓ Downloaded {_size_mb:.1f} MB via {_instance}")
+        except Exception as _e:
+            _last_err = _e
+            print(f"  ✗ {_instance} download — {str(_e)[:60]}")
+            continue
+
+        # Convert to 16kHz mono WAV
+        print("  → Converting to 16kHz mono WAV …")
+        _ensure_pydub()
+        from pydub import AudioSegment
+        _wav_path = os.path.splitext(_raw_path)[0] + ".wav"
+        _audio = AudioSegment.from_file(_raw_path)
+        _audio = _audio.set_channels(1).set_frame_rate(16000)
+        _audio.export(_wav_path, format="wav")
+        os.remove(_raw_path)
+        print(f"  → WAV ready: {_wav_path}")
+        return _wav_path
 
     raise RuntimeError(
-        f"All download strategies exhausted. Last error: {_last_err}"
+        f"All Invidious proxies failed. Last error: {_last_err}"
     )
-
 
 
 def convert_to_wav(input_path: str) -> str:
@@ -134,7 +224,6 @@ def convert_to_wav(input_path: str) -> str:
     audio = audio.set_channels(1).set_frame_rate(16000)  # 16khz
     audio.export(output_path, format="wav")
     return output_path
-
 
 
 def chunk_audio(wav_path: str, chunk_minutes: int = 10) -> list:
@@ -150,14 +239,36 @@ def chunk_audio(wav_path: str, chunk_minutes: int = 10) -> list:
         chunk = audio[start: start + chunk_ms]
         chunk_path = f"{wav_path}_chunk_{i}.wav"
         chunk.export(chunk_path, format="wav")
-
         chunks.append(chunk_path)
 
     return chunks
 
-def process_input(source: str) -> list:
+
+def process_input(source: str, language: str = "english") -> tuple:
+    """
+    Process input and return (chunks list or None, transcript_text or None).
+    
+    Two paths:
+    1. YouTube URL → try transcript API first; if unavailable, download audio
+    2. Local file → convert to WAV + chunk
+    
+    Returns: (chunks, transcript_text)
+      - If transcript fetched: (None, transcript_text)  → skip STT
+      - If audio downloaded:  (chunks, None)            → run STT
+      - If local file:        (chunks, None)            → run STT
+    """
     if source.startswith("http://") or source.startswith("https://"):
-        print("Detected YouTube URL. Downloading audio...")
+        print("Detected YouTube URL.")
+        
+        # ── Try transcript first (free, fast, no anti-bot) ──────────
+        try:
+            transcript = fetch_youtube_transcript(source, language=language)
+            print(f"Using YouTube transcript — skipping audio download + STT.")
+            return (None, transcript)
+        except Exception:
+            print("Transcript unavailable → downloading audio …")
+        
+        # ── Fallback: download audio via Invidious proxy ─────────────
         wav_path = download_youtube_audio(source)
     else:
         print("Detected local file. Converting to WAV...")
@@ -166,4 +277,4 @@ def process_input(source: str) -> list:
     print("Chunking audio...")
     chunks = chunk_audio(wav_path)
     print(f"Audio ready — {len(chunks)} chunk(s) created.")
-    return chunks
+    return (chunks, None)
