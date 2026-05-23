@@ -1,6 +1,6 @@
 // Auto-detect environment: production = Render backend, dev = localhost
 const API_BASE = import.meta.env.PROD
-  ? "https://contextframe-api.onrender.com/api"
+  ? "https://contextframe.onrender.com/api"
   : "http://localhost:8000/api";
 
 export interface JobStatus {
