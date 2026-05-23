@@ -54,51 +54,47 @@ def _extract_video_id(url: str) -> str:
     return _vid.group(1)
 
 
+LANG_MAP = {
+    "english": "en",
+    "hinglish": "hi",
+    "hindi": "hi",
+    "spanish": "es",
+    "french": "fr",
+    "german": "de",
+    "japanese": "ja",
+    "korean": "ko",
+    "portuguese": "pt",
+    "russian": "ru",
+    "chinese": "zh",
+    "arabic": "ar",
+}
+
+
 def fetch_youtube_transcript(url: str, language: str = "english") -> str:
     """
-    Fetch auto-generated captions from YouTube using youtube-transcript-api.
-    This library handles the timedtext API authentication/anti-bot correctly.
+    Fetch auto-generated captions from YouTube using the youtube-transcript-api
+    library (which uses the InnerTube API with ANDROID client context).
+
     Returns the transcript text, or raises an exception if not available.
     """
     from youtube_transcript_api import YouTubeTranscriptApi
 
     _vid = _extract_video_id(url)
-
-    _lang_map = {
-        "english": "en",
-        "hinglish": "hi",
-        "hindi": "hi",
-        "spanish": "es",
-        "french": "fr",
-        "german": "de",
-        "japanese": "ja",
-        "korean": "ko",
-        "portuguese": "pt",
-        "russian": "ru",
-        "chinese": "zh",
-        "arabic": "ar",
-    }
-    _lang_code = _lang_map.get(language.lower(), "en")
+    _lang_code = LANG_MAP.get(language.lower(), "en")
 
     print(f"  → Checking YouTube captions ({_lang_code}) for {_vid} ...")
 
-    try:
-        _api = YouTubeTranscriptApi()
-        _fetched = _api.fetch(_vid, languages=(_lang_code,))
-        _transcript = " ".join(s.text for s in _fetched)
-        _transcript = _transcript.strip()
+    _api = YouTubeTranscriptApi()
+    _fetched = _api.fetch(_vid, languages=(_lang_code,))
+    _transcript = " ".join(s.text for s in _fetched)
+    _transcript = _transcript.strip()
 
-        if not _transcript:
-            print("  ✗ Empty transcript returned")
-            raise RuntimeError("Empty transcript")
+    if not _transcript:
+        raise RuntimeError("Empty transcript from youtube-transcript-api")
 
-        _words = len(_transcript.split())
-        print(f"  ✓ Transcript fetched: {_words} words, {len(_transcript)} chars")
-        return _transcript
-
-    except Exception as _e:
-        print(f"  ✗ Transcript fetch failed: {str(_e)[:100]}")
-        raise
+    _words = len(_transcript.split())
+    print(f"  ✓ Transcript fetched via API: {_words} words, {len(_transcript)} chars")
+    return _transcript
 
 
 def download_youtube_audio(url: str) -> str:
