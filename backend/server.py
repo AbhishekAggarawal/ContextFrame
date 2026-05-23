@@ -69,8 +69,9 @@ def _sanitize_output(text: str) -> str:
 
 def _run_pipeline(job: JobStatus, source: str, language: str):
     """Run the full pipeline in a background thread."""
-    # ── Lazy imports: heavy ML libs (langchain, sentence-transformers, chromadb,
-    #     torch/whisper) are only loaded inside the background thread so the server
+    # ── Lazy imports: loaded inside the background thread so the server
+    #     can start and bind the port immediately. No heavy ML deps needed —
+    #     STT uses Sarvam cloud API, RAG uses BM25 (pure Python).
     #     can start and bind the port immediately. ───────────────────────────────
     from utils.audio_processor import process_input
     from core.transcriber import transcribe_all

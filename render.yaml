@@ -12,8 +12,6 @@ services:
         value: "3.12"
       - key: MISTRAL_API_KEY
         sync: false
-      - key: WHISPER_MODEL
-        value: small
       - key: SARVAM_API_KEY
         sync: false
       - key: SARVAM_STT_MODEL

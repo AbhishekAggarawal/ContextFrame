@@ -9,22 +9,17 @@ from core.rag_engine import build_rag_chain, ask_question
 load_dotenv()
 
 def run_pipeline(source :str, language :str = "english") -> dict:
-    print("starting AI Video Assistant")
+    print("Starting AI Video Assistant (Sarvam STT + BM25 RAG)")
 
     chunks = process_input(source)
-
-    transcript = transcribe_all(chunks,language)
-    print(f"raw transcription (first 300 characters ) {transcript[:300]}")
+    transcript = transcribe_all(chunks, language)
+    print(f"Raw transcription (first 300 chars): {transcript[:300]}")
 
     title = generate_title(transcript)
-
     summary = summarize(transcript)
-
     action_item = extract_action_items(transcript)
-
     decisions = extract_key_decisions(transcript)
     questions = extract_questions(transcript)
-    
     rag_chain = build_rag_chain(transcript)
 
     return {
