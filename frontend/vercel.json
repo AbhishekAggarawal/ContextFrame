@@ -1,3 +1,9 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [{ "source": "/api/(.*)", "destination": "/api/$1" }],
+  "functions": {
+    "api/fetch-transcript.js": {
+      "memory": 128,
+      "maxDuration": 15
+    }
+  }
 }

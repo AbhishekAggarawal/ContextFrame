@@ -67,12 +67,15 @@ def _sanitize_output(text: str) -> str:
     text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
     return text
 
-def _run_pipeline(job: JobStatus, source: str, language: str):
-    """Run the full pipeline in a background thread."""
+def _run_pipeline(job: JobStatus, source: str, language: str, prefetched_transcript: Optional[str] = None):
+    """Run the full pipeline in a background thread.
+
+    If prefetched_transcript is provided (e.g. fetched by Vercel edge function),
+    skip YouTube entirely — no Render IP ever touches YouTube.
+    """
     # ── Lazy imports: loaded inside the background thread so the server
     #     can start and bind the port immediately. No heavy ML deps needed —
     #     STT uses Sarvam cloud API, RAG uses BM25 (pure Python).
-    #     can start and bind the port immediately. ───────────────────────────────
     from utils.audio_processor import process_input
     from core.transcriber import transcribe_all
     from core.summarizer import summarize, generate_title
@@ -80,22 +83,30 @@ def _run_pipeline(job: JobStatus, source: str, language: str):
     from core.rag_engine import build_rag_chain
 
     try:
-        job.status = "processing"
-        job.progress = 5
-        job.message = "Downloading / converting audio..."
-
-        chunks, transcript = process_input(source, language)
-
-        if transcript is None:
-            # No transcript from YouTube captions — transcribe audio chunks via Sarvam STT
-            job.status = "transcribing"
-            job.progress = 20
-            job.message = f"Transcribing {len(chunks)} audio chunk(s)..."
-            transcript = transcribe_all(chunks, language)
-        else:
-            # Transcript was fetched directly from YouTube captions — skip STT
+        if prefetched_transcript and prefetched_transcript.strip():
+            # ── Path A: Transcript was pre-fetched by Vercel edge function ──────
+            #     Render never touches YouTube — no anti-bot IP blocking.
             job.progress = 40
-            job.message = "Using YouTube captions — skipping transcription..."
+            job.message = "Using pre-fetched transcript — skipping YouTube..."
+            transcript = prefetched_transcript.strip()
+        else:
+            # ── Path B: Fetch transcript via Render's IP (legacy/fallback) ──────
+            job.status = "processing"
+            job.progress = 5
+            job.message = "Downloading / converting audio..."
+
+            chunks, transcript = process_input(source, language)
+
+            if transcript is None:
+                # No transcript from YouTube captions — transcribe audio chunks via Sarvam STT
+                job.status = "transcribing"
+                job.progress = 20
+                job.message = f"Transcribing {len(chunks)} audio chunk(s)..."
+                transcript = transcribe_all(chunks, language)
+            else:
+                # Transcript was fetched directly from YouTube captions — skip STT
+                job.progress = 40
+                job.message = "Using YouTube captions — skipping transcription..."
 
         job.progress = 45
         job.message = "Generating title..."
@@ -155,13 +166,21 @@ async def health_check():
 
 
 @app.post("/api/process/youtube")
-async def process_youtube(url: str = Form(...), language: str = Form("english")):
-    """Start processing a YouTube video URL."""
+async def process_youtube(url: str = Form(...), language: str = Form("english"), transcript: Optional[str] = Form(None)):
+    """Start processing a YouTube video URL.
+
+    If 'transcript' is provided (pre-fetched by Vercel edge function),
+    the pipeline skips YouTube entirely — no Render IP touches YouTube.
+    """
     job_id = str(uuid.uuid4())
     job = JobStatus(job_id)
     jobs[job_id] = job
 
-    thread = threading.Thread(target=_run_pipeline, args=(job, url, language), daemon=True)
+    thread = threading.Thread(
+        target=_run_pipeline,
+        args=(job, url, language, transcript),
+        daemon=True,
+    )
     thread.start()
 
     return {"job_id": job_id, "status": "queued"}

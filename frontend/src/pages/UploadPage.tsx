@@ -9,7 +9,7 @@ import {
   Globe,
   Check,
 } from "lucide-react";
-import { processYouTube, processFile } from "../api";
+import { processYouTube, processFile, fetchTranscript, extractVideoId } from "../api";
 import { useJob } from "../context/JobContext";
 
 type InputMode = "youtube" | "file";
@@ -39,7 +39,20 @@ export default function UploadPage() {
           setLoading(false);
           return;
         }
-        response = await processYouTube(url.trim(), language);
+        
+        const trimmedUrl = url.trim();
+        
+        // ── Try fetching transcript via Vercel edge function (uses edge IP, not Render's blocked IP) ──
+        const videoId = extractVideoId(trimmedUrl);
+        let transcript: string | null = null;
+        
+        if (videoId) {
+          transcript = await fetchTranscript(videoId, language);
+        }
+        
+        // Pass transcript (may be null) to backend — backend uses it if available,
+        // otherwise falls back to its own youtube-transcript-api attempt
+        response = await processYouTube(trimmedUrl, language, transcript);
       } else {
         if (!file) {
           setError("Please select a file");
