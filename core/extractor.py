@@ -8,7 +8,7 @@ import os
 
 
 def get_llm():
-    return ChatMistralAI(model = "mistral-small-latest", mistral_api_key = os.getenv("MISTRAL_API_KEY"),temperature=0.2)
+    return ChatMistralAI(model = "open-mistral-nemo", mistral_api_key = os.getenv("MISTRAL_API_KEY"),temperature=0.2)
 
 
 

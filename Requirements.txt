@@ -28,6 +28,7 @@ mistralai>=0.4.0                  # Official Mistral Python client
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 python-dotenv>=1.0.0              # Load API keys from .env
+rank-bm25>=0.2.2                  # BM25 keyword retrieval (pure Python, ~0 MB RAM)
 numpy>=1.26.0
 tqdm>=4.66.0                      # Progress bars
 requests>=2.32.0
