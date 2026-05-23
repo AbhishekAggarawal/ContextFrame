@@ -3,10 +3,9 @@ import sys
 import shutil
 import requests
 
-# ── Ensure ffmpeg is on PATH *before* whisper import ────────────────────────
-# whisper uses subprocess.run("ffmpeg" ...) internally and ignores
-# pydub's AudioSegment.converter setting.
-# Cross-platform: uses shutil.which which works on Linux (Render) and Windows
+# ── Ensure ffmpeg is on PATH (cross-platform) ───────────────────────────────
+# whisper and pydub are lazy-imported inside functions so the server can
+# start quickly without loading Torch (~2 GB) at import time.
 _ffmpeg_exe = shutil.which("ffmpeg")
 if _ffmpeg_exe:
     _ffmpeg_dir = os.path.dirname(_ffmpeg_exe)
@@ -21,9 +20,6 @@ if sys.platform == "win32":
         if os.path.isdir(_d) and _d not in os.environ["PATH"].split(os.pathsep):
             os.environ["PATH"] = _d + os.pathsep + os.environ["PATH"]
             break
-
-import whisper
-from pydub import AudioSegment
 
 # Enable UTF-8 output on Windows
 if sys.platform == "win32":
@@ -45,14 +41,15 @@ _model = None
 
 
 def load_model():
+    """Load the Whisper model lazily (only when first needed)."""
+    global _model
+    import whisper
 
-    global _model  
-
-    if _model is None: 
+    if _model is None:
         print(f"Loading Whisper model: {WHISPER_MODEL} ...")
-        _model = whisper.load_model(WHISPER_MODEL) 
+        _model = whisper.load_model(WHISPER_MODEL)
         print("Whisper model loaded.")
-    return _model 
+    return _model
 
 
 def transcribe_chunk_whisper(chunk_path: str) -> str:
@@ -91,6 +88,8 @@ def transcribe_chunk_sarvam(chunk_path: str) -> str:
     Sarvam sync API only accepts ≤30s audio. We split this chunk into
     25-second pieces, send each separately, and join the transcripts.
     """
+    from pydub import AudioSegment
+
     if not SARVAM_API_KEY:
         raise RuntimeError("SARVAM_API_KEY is not set in environment / .env")
 
